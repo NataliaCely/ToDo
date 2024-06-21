@@ -1,5 +1,5 @@
 import { Component,  OnDestroy, OnInit, inject } from '@angular/core';
-import { Subject, takeUntil } from 'rxjs';
+import { BehaviorSubject, Subject, debounceTime, distinctUntilChanged, takeUntil } from 'rxjs';
 import { Task, TaskList } from '../models/task';
 import { ToastrService } from 'ngx-toastr';
 import { TaskService } from '../../../core/services/task/task.service';
@@ -20,22 +20,41 @@ export class TaskListComponent implements  OnInit,  OnDestroy{
   private _taskService = inject(TaskService);
   private _sendService = inject(SendInfoService);
   public taskList: TaskList[] = [];
+  public listFiltered: TaskList[] = [];
   public page: number = 1;
+  searchTerm$ = new BehaviorSubject<string>('');
   private readonly _destroying$ = new Subject<void>();
   constructor(){
     this.getTask();
   }
   ngOnInit(): void {
     this.refresTask();
+    this.filterList();
   }
 
   ngOnDestroy(): void{
     this._destroying$.next(undefined);
     this._destroying$.complete();
   }
-  getTask(){
-    this._taskService.getAllTask().subscribe(task =>this.taskList = task);
+/**
+ * The `getTask` function retrieves all tasks from a service, assigns them to `taskList`, and then
+ * filters the list.
+ */
+  getTask(): void {
+    this._taskService.getAllTask().subscribe(
+      task => {
+        this.taskList = task;
+        this.filterList();
+      },
+      error => {
+        console.error('Error al obtener las tareas', error);
+      }
+    );
   }
+/**
+ * The `refresTask` function subscribes to a refresh event and calls the `getTask` method when the
+ * event is triggered.
+ */
   refresTask(){
     this._sendService.refreshListTask.pipe(takeUntil(this._destroying$))
     .subscribe((data) => {
@@ -44,6 +63,10 @@ export class TaskListComponent implements  OnInit,  OnDestroy{
       }
     });
   }
+/**
+ * The `updateTask` function updates a task's state based on a user event and sends a request to update
+ * the task through a service.
+ */
   updateTask(task: any, event: any){
     const newState = event.target.checked;
     const body: Task = {
@@ -61,6 +84,10 @@ export class TaskListComponent implements  OnInit,  OnDestroy{
       },
     })
    }
+/**
+ * The `deleteTask` function sends a request to delete a task and displays a success or error message
+ * accordingly.
+ */
   deleteTask(task:any){
     this._taskService.deleteTask(task.id).subscribe({
       next:(value)=> {
@@ -72,5 +99,29 @@ export class TaskListComponent implements  OnInit,  OnDestroy{
       },
     })
   }
-
+/**
+ * The `filterList` function filters a list of tasks based on a search term input with debouncing and
+ * distinctUntilChanged operators.
+ */
+  filterList(): void {
+    this.searchTerm$
+      .pipe(
+        debounceTime(400),
+        distinctUntilChanged(),
+        takeUntil(this._destroying$)
+      )
+      .subscribe(term => {
+        this.listFiltered = this.taskList.filter(item =>
+          item.title.toLowerCase().includes(term.toLowerCase())
+        );
+      });
+  }
+/**
+ * The `handleSearch` function in TypeScript trims the input value and emits it to an observable
+ * stream.
+ */
+  handleSearch(event: any): void {
+    const searchTerm = event.target.value.trim();
+    this.searchTerm$.next(searchTerm);
+  }
 }
